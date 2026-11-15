@@ -1,13 +1,12 @@
-import os
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 from tp72notes import state
 from tp72notes.classify import Verdict, by_speech_ratio
 from tp72notes.config import Config
-from tp72notes.device import list_recordings
+from tp72notes.device import list_local, make_recordings, parse_tree
 from tp72notes.notes import update_note
 from tp72notes.todos import extract_todos
 
@@ -71,16 +70,41 @@ class FilesTest(unittest.TestCase):
             state.save(path, {"a": {"verdict": "music"}})
             self.assertEqual(state.load(path), {"a": {"verdict": "music"}})
 
-    def test_lists_recordings_with_globs(self):
+    def test_lists_local_recordings_with_globs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ("memo.WAV", "tracks/song.wav", "notes/a.wav", "readme.txt"):
                 (root / name).parent.mkdir(parents=True, exist_ok=True)
                 (root / name).write_bytes(b"1234")
-            os.utime(root / "memo.WAV", (1763100000, 1763100000))
-            recordings = list_recordings(root, ("**/*.wav",), ("tracks/**",))
-            self.assertEqual([recording.id for recording in recordings], ["memo.WAV:4", "notes/a.wav:4"])
-            self.assertEqual(recordings[0].recorded_at.timestamp(), 1763100000)
+            recordings = list_local(root, ("**/*.wav",), ("tracks/**",))
+            self.assertEqual([recording.id for recording in recordings], ["memo.WAV", "notes/a.wav"])
+
+
+TREE = """Device 0 (VID=2367 and PID=0019) is a Teenage engineering TP-7.
+Attempting to connect device(s)
+Device: (NULL)
+Storage: TP-7 MTP Device
+1 recordings
+  2 1980-01-01_000000_000.wav
+  3 2026-11-14_190821_000.wav
+11 library
+OK.
+"""
+
+
+class MtpTest(unittest.TestCase):
+    def test_parses_filetree(self):
+        self.assertEqual(
+            parse_tree(TREE),
+            {"recordings": 1, "recordings/1980-01-01_000000_000.wav": 2, "recordings/2026-11-14_190821_000.wav": 3, "library": 11},
+        )
+
+    def test_dates_from_filename_with_unset_clock_fallback(self):
+        recordings = make_recordings(parse_tree(TREE), ("**/*.wav",), ())
+        self.assertEqual([recording.source for recording in recordings], [2, 3])
+        self.assertTrue(recordings[0].clock_unset)
+        self.assertEqual(recordings[0].recorded_at.date(), datetime.now().date())
+        self.assertEqual((recordings[1].recorded_at, recordings[1].clock_unset), (datetime(2026, 11, 14, 19, 8, 21), False))
 
 
 if __name__ == "__main__":

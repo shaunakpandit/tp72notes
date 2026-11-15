@@ -17,7 +17,7 @@
 nix develop
 python -m unittest                                   # tests
 python -m tp72notes --dry-run --device-path ~/tp7    # preview against copied files
-python -m tp72notes                                  # mount TP-7, transcribe, commit, push
+python -m tp72notes                                  # read TP-7 over MTP, transcribe, commit, push
 ```
 
 Optional `~/.config/tp72notes/config.toml` (all keys optional):

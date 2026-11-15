@@ -1,6 +1,5 @@
 import argparse
 import difflib
-import shutil
 import subprocess
 import sys
 from itertools import groupby
@@ -23,7 +22,11 @@ def cache_copy(recording: device.Recording, cache_dir: Path) -> Path:
     target = cache_dir / recording.id.replace("/", "_")
     if not target.exists():
         cache_dir.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(recording.path, target)
+        # Download under a temporary name so an interrupted transfer isn't mistaken for a cached file.
+        partial = target.with_name(target.name + ".part")
+        partial.unlink(missing_ok=True)
+        device.fetch(recording, partial)
+        partial.rename(target)
     return target
 
 
@@ -54,27 +57,18 @@ def write_notes(config: Config, transcribed: list[tuple[device.Recording, str]],
 def run(config: Config, device_path: Path | None, force: set[str], dry_run: bool) -> None:
     if not dry_run:
         notes.pull(config.notes_repo)
-    mounted = None
-    if device_path is None:
-        block = device.find_block_device()
-        if block is None:
-            raise SystemExit("TP-7 not found")
-        mounted, device_path = device.mount(block)
-    try:
-        processed = state.load(config.state_path)
-        pending = [
-            recording
-            for recording in device.list_recordings(device_path, config.include, config.exclude)
-            if recording.id not in processed or recording.id in force
-        ]
-        cached = [(recording, cache_copy(recording, config.cache_dir)) for recording in pending]
-    finally:
-        if mounted:
-            device.unmount(mounted)
+    recordings = (
+        device.list_local(device_path, config.include, config.exclude)
+        if device_path
+        else device.list_mtp(config.include, config.exclude)
+    )
+    processed = state.load(config.state_path)
+    pending = [recording for recording in recordings if recording.id not in processed or recording.id in force]
+    cached = [(recording, cache_copy(recording, config.cache_dir)) for recording in pending]
 
     results = [(recording, transcribe(path, config, force=recording.id in force)) for recording, path in cached]
     for recording, result in results:
-        print(f"{result.verdict.value:6} {result.speech_ratio:.2f} {recording.id}")
+        print(f"{result.verdict.value:6} {result.speech_ratio:.2f} {recording.id}" + (" (TP-7 clock unset, dated today)" if recording.clock_unset else ""))
 
     transcribed = [(recording, result.text) for recording, result in results if result.verdict is Verdict.SPEECH and result.text]
     changed = write_notes(config, transcribed, dry_run)
@@ -89,11 +83,13 @@ def run(config: Config, device_path: Path | None, force: set[str], dry_run: bool
             recording.id: {"verdict": result.verdict.value, "date": recording.recorded_at.date().isoformat()}
             for recording, result in results
         })
+    undated = sum(recording.clock_unset for recording, _ in transcribed)
     skipped = [recording.id for recording, result in results if result.verdict is Verdict.MUSIC]
     notify(
         f"{len(transcribed)} transcribed, {len(skipped)} skipped as music"
         + (f" ({', '.join(skipped)})" if skipped else "")
         + (f"; updated {', '.join(path.stem for path in changed)}" if changed else "")
+        + (f"; {undated} had no date (set the TP-7 clock) and went into today's note" if undated else "")
     )
 
 
