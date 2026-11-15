@@ -13,10 +13,10 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Starts the user service when the TP-7 connects in file transfer mode; ID_MTP_DEVICE comes from libmtp's
-    # udev rules (nixus system/mtp.nix), so audio-interface mode doesn't trigger it.
+    # Starts the user service when the TP-7 connects in file transfer mode. Matches the MTP interface (06/01/01)
+    # because ID_MTP_DEVICE is set in audio-interface mode too (same USB ids).
     services.udev.extraRules = ''
-      ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{ID_MTP_DEVICE}=="1", ATTR{idVendor}=="2367", ATTR{idProduct}=="0019", TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="tp72notes.service"
+      ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{ID_USB_INTERFACES}=="*:060101:*", ATTR{idVendor}=="2367", ATTR{idProduct}=="0019", TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="tp72notes.service"
     '';
 
     systemd.user.services.tp72notes = {

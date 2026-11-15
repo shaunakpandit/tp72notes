@@ -65,6 +65,6 @@ def fetch(recording: Recording, target: Path) -> None:
     if isinstance(recording.source, Path):
         shutil.copy2(recording.source, target)
         return
-    subprocess.run(["mtp-getfile", str(recording.source), str(target)], capture_output=True)
+    result = subprocess.run(["mtp-getfile", str(recording.source), str(target)], capture_output=True, text=True)
     if not target.exists():
-        raise RuntimeError(f"mtp-getfile failed for {recording.id}")
+        raise RuntimeError(f"mtp-getfile failed for {recording.id}:\n{result.stdout}{result.stderr}")

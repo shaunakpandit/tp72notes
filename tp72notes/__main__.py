@@ -1,5 +1,6 @@
 import argparse
 import difflib
+import shutil
 import subprocess
 import sys
 from itertools import groupby
@@ -14,7 +15,8 @@ from .transcribe import transcribe
 
 def notify(message: str) -> None:
     print(message)
-    subprocess.run(["notify-send", "tp72notes", message], check=False, capture_output=True)
+    if shutil.which("notify-send"):
+        subprocess.run(["notify-send", "tp72notes", message], check=False, capture_output=True)
 
 
 def cache_copy(recording: device.Recording, cache_dir: Path) -> Path:
@@ -64,7 +66,15 @@ def run(config: Config, device_path: Path | None, force: set[str], dry_run: bool
     )
     processed = state.load(config.state_path)
     pending = [recording for recording in recordings if recording.id not in processed or recording.id in force]
-    cached = [(recording, cache_copy(recording, config.cache_dir)) for recording in pending]
+    cached = []
+    for recording in pending:
+        try:
+            cached.append((recording, cache_copy(recording, config.cache_dir)))
+        except RuntimeError as error:
+            # The TP-7 drops out of file transfer mode on its own; keep what was copied, the rest retries next run.
+            print(error)
+            break
+    missed = len(pending) - len(cached)
 
     results = [(recording, transcribe(path, config, force=recording.id in force)) for recording, path in cached]
     for recording, result in results:
@@ -89,6 +99,7 @@ def run(config: Config, device_path: Path | None, force: set[str], dry_run: bool
         f"{len(transcribed)} transcribed, {len(skipped)} skipped as music"
         + (f" ({', '.join(skipped)})" if skipped else "")
         + (f"; updated {', '.join(path.stem for path in changed)}" if changed else "")
+        + (f"; {missed} not copied (TP-7 left file transfer mode), retrying next time" if missed else "")
         + (f"; {undated} had no date (set the TP-7 clock) and went into today's note" if undated else "")
     )
 
