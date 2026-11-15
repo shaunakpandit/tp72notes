@@ -1,0 +1,16 @@
+[project]
+name = "tp72notes"
+version = "0.1.0"
+description = "Transcribe TP-7 voice notes into daily markdown notes"
+requires-python = ">=3.13"
+dependencies = ["faster-whisper"]
+
+[project.scripts]
+tp72notes = "tp72notes.__main__:main"
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["tp72notes"]
